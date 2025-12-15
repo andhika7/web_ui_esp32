@@ -35,21 +35,21 @@ void app_main(){
     // ================== mulai soft AP mode ==================
     start_soft_ap_mode();
 
-    // debug wifi mode
-    wifi_mode_t mode;
-    ESP_ERROR_CHECK(esp_wifi_get_mode(&mode));
-    ESP_LOGI(TAG, "Current WiFi mode: %s",
-             (mode == WIFI_MODE_AP) ? "AP" :
-             (mode == WIFI_MODE_STA) ? "STA" :
-             (mode == WIFI_MODE_APSTA) ? "APSTA" : "NULL"); 
+    // // debug wifi mode
+    // wifi_mode_t mode;
+    // ESP_ERROR_CHECK(esp_wifi_get_mode(&mode));
+    // ESP_LOGI(TAG, "Current WiFi mode: %s",
+    //          (mode == WIFI_MODE_AP) ? "AP" :
+    //          (mode == WIFI_MODE_STA) ? "STA" :
+    //          (mode == WIFI_MODE_APSTA) ? "APSTA" : "NULL"); 
 
     // ================== mulai web server di mode AP ==================
     // start_web_server_ap_mode();    
 
-    // // =============== init dan mulai wifi scan system ========
-    // ESP_ERROR_CHECK(wifi_scan_system_init());
+    // =============== init dan mulai wifi scan system ========
+    ESP_ERROR_CHECK(wifi_scan_system_init());
     // // register callback untuk hasil scan
-    // wifi_scan_register_callback(hasil_scan);
+    wifi_scan_register_callback(hasil_scan);
     // // vTaskDelay(pdMS_TO_TICKS(2000));
 
     // // mulai scan wifi
