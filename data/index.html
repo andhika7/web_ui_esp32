@@ -24,6 +24,12 @@
             button:hover{
                 background-color: #005fcc;
             }
+            button:disabled{
+                background-color: #999;
+                cursor: not-allowed;
+                opacity: 0.6;
+            }
+
             #status {
                 margin-top: 10px;
                 font-weight: bold;
@@ -68,38 +74,50 @@
         <!-- skrip -->
         <script>
         function startScan(){
+            const btn = document.querySelector("button");
+            btn.disabled = true; // menonaktifkan tombol selama pemindaian
             document.getElementById("status").innerText = "Status: Scanning...";
 
             fetch("/scan")
-                .then(res => res.text())
-                .then(text => {
-                    console.log("Scan triggered:", text);
-                    waitScanResults();
-                });
+                .then(() =>pollResults());
+                // .then(res => res.text())
+                // .then(text => {
+                //     console.log("Scan triggered:", text);
+                //     waitScanResults();
+                // });
         }
 
         function waitScanResults(){
-            setTimeout(fetchResults, 1000);            
+            setTimeout(pollResults, 1000);            
         }
 
-        function fetchResults(){
+        function pollResults(){
             fetch("/scan_results")
                 .then(res => res.json())
                 .then(data =>{
+                    console.log("Scan results:", data);
                     // jika belum ada hasil
-                    if (data.status === "no_result") {
-                        document.getElementById("status").innerText = "Status: waiting for scan result...";
+                    if (data.status === "scan in progress") {
+                        document.getElementById("status").innerText = "Status: scanning in progress...";
                         return waitScanResults();
                     }
-                    document.getElementById("status").innerText = "Status: scan finished (" + data.length + "AP)";
+                    
+                    // jika ada hasil
+                    if (data.status !== "scan completed") {
+                        document.getElementById("status").innerText = "Status: wifi busy, retrying...";
+                        return waitScanResults();
+                    }
 
+                    document.getElementById("status").innerText = "Status: scan completed (" + data.ap_count + "AP)";
+
+                    document.querySelector("button").disabled = false; // mengaktifkan kembali tombol setelah pemindaian selesai
                     const tbody = document.querySelector("#resultTable tbody");
                     tbody.innerHTML = "";
 
-                    data.forEach( ap => {
+                    data.aps.forEach( ap => {
                         const row = `
                             <tr>
-                                <td>${ap.ssid}</td>
+                                <td>${ap.ssid || "(hidden)"}</td> 
                                 <td>${ap.rssi}</td>
                                 <td>${ap.channel}</td>
                                 <td>${ap.authmode}</td>
@@ -110,9 +128,41 @@
                 })
                 .catch(err =>{
                     console.error("error:", err);
-                    document.getElementById("status").innerText = "error fetching results";
+                    document.getElementById("status").innerText = "error fetching results"; // masih muncul error meskipun scan berhasil
                 });
         }
+
+        // function fetchResults(){
+        //     fetch("/scan_results")
+        //         .then(res => res.json())
+        //         .then(data =>{
+        //             // jika belum ada hasil
+        //             if (data.status === "no_result") {
+        //                 document.getElementById("status").innerText = "Status: waiting for scan result...";
+        //                 return waitScanResults();
+        //             }
+        //             document.getElementById("status").innerText = "Status: scan finished (" + data.length + "AP)";
+
+        //             const tbody = document.querySelector("#resultTable tbody");
+        //             tbody.innerHTML = "";
+
+        //             data.forEach( ap => {
+        //                 const row = `
+        //                     <tr>
+        //                         <td>${ap.ssid}</td>
+        //                         <td>${ap.rssi}</td>
+        //                         <td>${ap.channel}</td>
+        //                         <td>${ap.authmode}</td>
+        //                     </tr>
+        //                 `;
+        //                 tbody.innerHTML += row;
+        //             });
+        //         })
+        //         .catch(err =>{
+        //             console.error("error:", err);
+        //             document.getElementById("status").innerText = "error fetching results";
+        //         });
+        // }
         </script>         
 
     </body>

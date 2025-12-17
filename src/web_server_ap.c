@@ -8,6 +8,20 @@
 static const char *TAG = "WEB_SERVER_AP";
 static httpd_handle_t server = NULL;
 
+static const char *wifi_auth_mode_to_string(wifi_auth_mode_t authmode){
+    switch (authmode){
+        case WIFI_AUTH_OPEN: return "OPEN";
+        case WIFI_AUTH_WEP: return "WEP";
+        case WIFI_AUTH_WPA_PSK: return "WPA-PSK";
+        case WIFI_AUTH_WPA2_PSK: return "WPA2-PSK";
+        case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2-PSK";
+        case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-ENTERPRISE";
+        case WIFI_AUTH_WPA3_PSK: return "WPA3-PSK";
+        case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3-PSK";
+        default: return "UNKNOWN";
+    }
+}
+
 // handler for root URI "/" ---- untuk menampilkan halaman index.html dari SPIFFS
 static esp_err_t index_handler(httpd_req_t *req){
     FILE *file = fopen("/spiffs/index.html", "r");
@@ -34,20 +48,22 @@ static esp_err_t index_handler(httpd_req_t *req){
     return ESP_OK;
 }
 
-// handler /scan (trigger scan)
+// handler /scan -----------------------------(trigger scan)
 static esp_err_t scan_handler(httpd_req_t *req){
     ESP_LOGI(TAG, "Received /scan request");
+    httpd_resp_set_type(req, "application/json");
     // mulai scan wifi
     esp_err_t err = wifi_scan_start(false, 150); // scan aktif, durasi 100 ms
     cJSON *root = cJSON_CreateObject();
     if (err == ESP_OK){
         cJSON_AddStringToObject(root, "status", "scan started");
+    } else if (err == ESP_ERR_WIFI_STATE){
+        cJSON_AddStringToObject(root, "status", "wifi busy");
     } else {
         cJSON_AddStringToObject(root, "status", "scan failed to start");
     }
 
     char *json = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json);
 
     cJSON_Delete(root);
@@ -56,7 +72,7 @@ static esp_err_t scan_handler(httpd_req_t *req){
 }
 
 
-// handler /scan_results (get scan results) -- JSON
+// handler /scan_results ------------------------------ (get scan results) -- JSON
 static esp_err_t scan_results_handler(httpd_req_t *req){
     ESP_LOGI(TAG, "Received /scan_results request");
 
@@ -66,7 +82,7 @@ static esp_err_t scan_results_handler(httpd_req_t *req){
     if(!wifi_scan_is_done()){
         cJSON *root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "status", "scan in progress");
-        ESP_LOGW(TAG, "scan belum selesai, tidak dapat mengirim hasil scan");
+        ESP_LOGW(TAG, "scan in progress");
 
         char *json = cJSON_PrintUnformatted(root);
         httpd_resp_set_type(req, "application/json");
@@ -87,10 +103,14 @@ static esp_err_t scan_results_handler(httpd_req_t *req){
     for (int i = 0; i < ap_count; i++){
         cJSON *ap = cJSON_CreateObject();
 
-        cJSON_AddStringToObject(ap, "ssid", (char *)ap_list[i].ssid);
+        char ssid[33];
+        memcpy(ssid, ap_list[i].ssid, 32);
+        ssid[32] = '\0';
+
+        cJSON_AddStringToObject(ap, "ssid", ssid);
         cJSON_AddNumberToObject(ap, "rssi", ap_list[i].rssi);
         cJSON_AddNumberToObject(ap, "channel", ap_list[i].primary);
-        cJSON_AddNumberToObject(ap, "authmode", ap_list[i].authmode);
+        cJSON_AddStringToObject(ap, "authmode", wifi_auth_mode_to_string(ap_list[i].authmode));
         cJSON_AddItemToArray(arr, ap);
     }
     cJSON_AddItemToObject(root, "aps", arr);
