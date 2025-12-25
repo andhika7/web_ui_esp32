@@ -50,6 +50,12 @@
                 background-color: #0078ff;
                 color: white;
             }
+            #ssidinput, #wifiPassword {
+                padding: 8px;
+                width: 200px;
+                box-sizing: border-box;
+            }
+
         </style>
     </head>
 
@@ -70,6 +76,18 @@
             </thead>
             <tbody></tbody>
         </table>
+
+        <h3>Connect to Wifi (please klik ssid to connect)</h3>
+        <div id="connectBox" style="display:none;">
+            <!-- <p>SSID: <b id="selectedSSID"></b></p> -->
+            <input id="ssidinput" readonly>
+            <input type="password" id="wifiPassword" placeholder="Enter Wifi Password" style="display: none;">
+            <br><br>
+            <button onclick="connectWifi()">Connect</button>
+            
+            <div id="connectStatus"></div>
+        </div>
+
 
         <!-- skrip -->
         <script>
@@ -115,21 +133,84 @@
                     tbody.innerHTML = "";
 
                     data.aps.forEach( ap => {
-                        const row = `
-                            <tr>
-                                <td>${ap.ssid || "(hidden)"}</td> 
-                                <td>${ap.rssi}</td>
-                                <td>${ap.channel}</td>
-                                <td>${ap.authmode}</td>
-                            </tr>
+                        const tr = document.createElement("tr");
+
+                        tr.innerHTML = `
+                            <td>${ap.ssid || "(hidden)"}</td>
+                            <td>${ap.rssi}</td>
+                            <td>${ap.channel}</td>
+                            <td>${ap.authmode}</td>
                         `;
-                        tbody.innerHTML += row;
+
+                        tr.addEventListener("click", () => {
+                            selectSSID(ap.ssid, ap.authmode);
+                        });
+
+                        tbody.appendChild(tr);
+
+                        // const row = ` 
+                        //     <tr onclick="selectSSID('${ap.ssid}', '${ap.authmode}')" > 
+                        //         <td>${ap.ssid || "(hidden)"}</td> 
+                        //         <td>${ap.rssi}</td>
+                        //         <td>${ap.channel}</td>
+                        //         <td>${ap.authmode}</td>
+                        //     </tr>
+                        // `; // menambahkan event onclick pada baris
+                        // tbody.innerHTML += row;
                     });
                 })
                 .catch(err =>{
                     console.error("error:", err);
                     document.getElementById("status").innerText = "error fetching results"; // masih muncul error meskipun scan berhasil
                 });
+        }
+
+        let selectedSSID = "";
+        let selectedAuthmode = "";
+
+        function selectSSID(ssid, authmode){
+            selectedSSID = ssid;
+            selectedAuthmode = authmode;
+            // menampilkan kotak koneksi
+            document.getElementById("connectBox").style.display = "block";
+            // menampilkan ssid yang dipilih
+            document.getElementById("ssidinput").value = ssid || "(hidden)";
+
+            const passwordInput = document.getElementById("wifiPassword");
+            if (authmode === "OPEN") {
+                document.getElementById("wifiPassword").style.display = "none";
+            } else {
+                document.getElementById("wifiPassword").style.display = "block";
+            }
+
+            document.getElementById("connectStatus").innerText = 
+                "selected SSID: " + (ssid || "(hidden)");
+        }
+
+        function connectWifi(){
+            const password = document.getElementById("wifiPassword").value;
+            const ssid = document.getElementById("ssidinput").value;
+            
+            document.getElementById("connectStatus").innerText = "Connecting to ";
+
+            fetch("/connect_wifi", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    ssid: ssid,
+                    password: password
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("connectStatus").innerText = data.status;
+            })
+            .catch(err => {
+                console.error("error:", err);
+                document.getElementById("connectStatus").innerText = "error connecting to wifi";
+            });
         }
 
         // function fetchResults(){

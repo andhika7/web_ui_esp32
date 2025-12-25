@@ -4,6 +4,9 @@
 #include "string.h"
 #include "cJSON.h"
 #include "wifi_scan.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 static const char *TAG = "WEB_SERVER_AP";
 static httpd_handle_t server = NULL;
@@ -97,10 +100,16 @@ static esp_err_t scan_results_handler(httpd_req_t *req){
     cJSON *root = cJSON_CreateObject();
     cJSON *arr = cJSON_CreateArray();
 
-    cJSON_AddStringToObject(root, "status", "scan completed");
-    cJSON_AddNumberToObject(root, "ap_count", ap_count);
+    // cJSON_AddStringToObject(root, "status", "scan completed");
+    // cJSON_AddNumberToObject(root, "ap_count", ap_count);
+
+    int valid_count = 0;
 
     for (int i = 0; i < ap_count; i++){
+        if (ap_list[i].ssid[0] == '\0') {
+            continue; // skip hidden SSIDs
+        }
+
         cJSON *ap = cJSON_CreateObject();
 
         char ssid[33];
@@ -112,9 +121,12 @@ static esp_err_t scan_results_handler(httpd_req_t *req){
         cJSON_AddNumberToObject(ap, "channel", ap_list[i].primary);
         cJSON_AddStringToObject(ap, "authmode", wifi_auth_mode_to_string(ap_list[i].authmode));
         cJSON_AddItemToArray(arr, ap);
-    }
-    cJSON_AddItemToObject(root, "aps", arr);
 
+        valid_count++;
+    }
+    cJSON_AddStringToObject(root, "status", "scan completed");
+    cJSON_AddNumberToObject(root, "ap_count", valid_count);
+    cJSON_AddItemToObject(root, "aps", arr);
 
     char *json = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
@@ -125,6 +137,76 @@ static esp_err_t scan_results_handler(httpd_req_t *req){
     return ESP_OK;
 }
 
+// handler simpan ssid dan password ke NVS
+static esp_err_t save_wifi_credentials(const char *ssid, const char *password){
+    esp_err_t err;
+    nvs_handle_t nvs_handle;
+    // buka NVS namespace "wifi_creds"
+    err = nvs_open("wifi_creds", NVS_READWRITE, &nvs_handle);
+
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // simpan ssid
+    err = nvs_set_str(nvs_handle, "ssid", ssid);
+    // simpan password
+    err = nvs_set_str(nvs_handle, "password", password);
+    // commit perubahan
+    err = nvs_commit(nvs_handle);
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error committing changes to NVS: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "WiFi credentials saved to NVS");
+    }
+
+    nvs_close(nvs_handle);
+    return ESP_OK;
+}
+
+// handler untuk connect ke wifi dengan ssid dan password dari form
+static esp_err_t connect_handler(httpd_req_t *req){
+    ESP_LOGI(TAG, "Received /connect request");
+    char buf[256];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) return ESP_FAIL;
+    buf[len] = '\0';
+
+    // parse JSON
+    cJSON *root = cJSON_Parse(buf);
+    if (!root){
+        ESP_LOGE(TAG, "Failed to parse JSON");
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    const char *ssid_item = cJSON_GetObjectItem(root, "ssid") -> valuestring;
+    const char *password_item = cJSON_GetObjectItem(root, "password") -> valuestring;
+
+    ESP_LOGI(TAG, "Connecting to SSID: %s", ssid_item);
+    // simpan ssid dan password ke NVS
+    save_wifi_credentials(ssid_item, password_item);
+
+    wifi_config_t cfg = {0};
+    strncpy((char *)cfg.sta.ssid, ssid_item, sizeof(cfg.sta.ssid));
+    strncpy((char *)cfg.sta.password, password_item, sizeof(cfg.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &cfg));
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "connecting");
+    char *json = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+
+    cJSON_Delete(root);
+    cJSON_Delete(response);
+    free(json);
+    return ESP_OK;
+}
 
 
 void web_server_app_start(void){
@@ -156,6 +238,14 @@ void web_server_app_start(void){
             .user_ctx = NULL
         };
         httpd_register_uri_handler(server, &scan_results_uri);
+
+        httpd_uri_t connect_uri = {
+            .uri = "/connect_wifi",
+            .method = HTTP_POST,
+            .handler = connect_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &connect_uri);
 
         ESP_LOGI(TAG, "Web server started in AP mode");
     } else {
